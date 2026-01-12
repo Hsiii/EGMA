@@ -3,9 +3,9 @@ import os
 import torch
 import torch.nn as nn
 from einops import rearrange
-from mgca.models.backbones import cnn_backbones
-from mgca.models.backbones.med import BertModel
-from mgca.models.backbones.vits import create_vit
+from egma.backbones import cnn_backbones
+from egma.backbones.med import BertModel
+from egma.backbones.vits import create_vit
 from transformers import AutoTokenizer, BertConfig, BertTokenizer, logging
 
 logging.set_verbosity_error()

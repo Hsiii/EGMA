@@ -1,7 +1,7 @@
 name = 'MedCLIP'
 version = '0.0.3'
 
-from .modeling_medclip import (
+from .modeling_egma import (
     MedCLIPTextModel, # text encoder
     MedCLIPVisionModel, # vision encoder (ResNet50)
     MedCLIPVisionModelViT, # vision encoder (Swin-Transformer)

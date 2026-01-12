@@ -125,7 +125,7 @@ class Trainer:
             schedulers.append(scheduler_obj)
 
         # map models to devices
-        model = model.cuda()
+        # model = model.cuda()
 
         # execute training on multiple GPUs
         global_step = 0
@@ -460,7 +460,7 @@ class Trainer_multi_evaluator:
             schedulers.append(scheduler_obj)
 
         # map models to devices
-        model = model.cuda()
+        # model = model.cuda()
 
         # execute training on multiple GPUs
         global_step = 0
@@ -619,7 +619,7 @@ class Trainer_multi_evaluator:
             self.score_logs[key].append(round(np.mean(train_loss_dict[key]), 8))
 
         """eval2"""
-        if not args['finetuned']:
+        if not args['finetuned'] and self.evaluator2 is not None:
             scores2 = self.evaluator2.evaluate()
             logging.info(f'######### Eval2 {global_step} #########')
             for key, v in scores2.items():
@@ -757,7 +757,7 @@ class Trainer_multi:
         schedulers.append(scheduler_obj)
 
         # map models to devices
-        model = model.cuda()
+        # model = model.cuda()
 
         # execute training on multiple GPUs
         global_step = 0

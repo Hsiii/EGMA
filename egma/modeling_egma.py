@@ -17,6 +17,11 @@ from .backbones.med import BertModel
 
 from . import constants
 from transformers import AutoTokenizer, BertConfig, BertTokenizer, logging
+import torch # Ensure torch is imported
+def safe_load(*args, **kwargs):
+    if not torch.cuda.is_available():
+        kwargs['map_location'] = torch.device('cpu')
+    return torch.load(*args, **kwargs)
 
 from egma.gloria_models import *
 from omegaconf import OmegaConf
@@ -72,7 +77,7 @@ class MedCLIPVisionModel(nn.Module):
         num_fts = self.model.fc.in_features
         self.model.fc = nn.Linear(num_fts, 512, bias=False) # projection head
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -83,7 +88,7 @@ class MedCLIPVisionModel(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -116,7 +121,7 @@ class MedCLIPVisionModelViT(nn.Module):
         # self.projection_head1 = nn.Linear(256, 512, bias=False)
         # self.projection_head2 = nn.Linear(1024, 512, bias=False)
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -127,7 +132,7 @@ class MedCLIPVisionModelViT(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -182,14 +187,14 @@ class MedCLIPModel(nn.Module):
         self.logit_scale = nn.Parameter(torch.log(torch.tensor(1/logit_scale_init_value)))
 
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -234,14 +239,14 @@ class MedCLIPModel(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
 
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -259,12 +264,12 @@ class MedCLIPModel(nn.Module):
                 return_loss=None,
                 **kwargs,
                 ):
-        # input_ids = input_ids.cuda()
+        # input_ids = input_ids.to('cpu')
         input_ids = input_ids.cuda(non_blocking=True)
         if attention_mask is not None:
-            # attention_mask = attention_mask.cuda()
+            # attention_mask = attention_mask.to('cpu')
             attention_mask = attention_mask.cuda(non_blocking=True)
-        # pixel_values = pixel_values.cuda()
+        # pixel_values = pixel_values.to('cpu')
         pixel_values = pixel_values.cuda(non_blocking=True)
 
         img_embeds = self.encode_image(pixel_values)
@@ -308,12 +313,12 @@ class PromptClassifier(nn.Module):
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
 
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            for k in cls_text.keys(): inputs[k] = cls_text[k].cuda()
+            for k in cls_text.keys(): inputs[k] = cls_text[k].to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -348,12 +353,12 @@ class PromptClassifier_openCLIP(nn.Module):
         '''take image pixel values (after transform) and prompt_inputs
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            inputs['input_ids'] = cls_text.cuda()
+            inputs['input_ids'] = cls_text.to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -388,13 +393,13 @@ class PromptClassifier_tNSE(nn.Module):
         '''take image pixel values (after transform) and prompt_inputs
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         img_embeds = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            for k in cls_text.keys(): inputs[k] = cls_text[k].cuda()
+            for k in cls_text.keys(): inputs[k] = cls_text[k].to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -437,7 +442,7 @@ class VisionModelViT_for_VIS(nn.Module):
         # self.projection_head1 = nn.Linear(256, 512, bias=False)
         # self.projection_head2 = nn.Linear(1024, 512, bias=False)
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -448,7 +453,7 @@ class VisionModelViT_for_VIS(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -504,14 +509,14 @@ class Model_for_VIS(nn.Module):
         self.logit_scale = nn.Parameter(torch.log(torch.tensor(1/logit_scale_init_value)))
 
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -556,14 +561,14 @@ class Model_for_VIS(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
 
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -582,12 +587,12 @@ class Model_for_VIS(nn.Module):
                 return_loss=None,
                 **kwargs,
                 ):
-        # input_ids = input_ids.cuda()
+        # input_ids = input_ids.to('cpu')
         input_ids = input_ids.cuda(non_blocking=True)
         if attention_mask is not None:
-            # attention_mask = attention_mask.cuda()
+            # attention_mask = attention_mask.to('cpu')
             attention_mask = attention_mask.cuda(non_blocking=True)
-        # pixel_values = pixel_values.cuda()
+        # pixel_values = pixel_values.to('cpu')
         pixel_values = pixel_values.cuda(non_blocking=True)
 
         img_embeds = self.encode_image(pixel_values)
@@ -635,7 +640,7 @@ class Hyrachy_VisionModelViT(nn.Module):
         self.projection_head2 = nn.Linear(384, 512, bias=False)
         # self.projection_head3 = nn.Linear(768, 512, bias=False)
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -646,7 +651,7 @@ class Hyrachy_VisionModelViT(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -699,7 +704,7 @@ class Hyrachy_ConV_VisionModelViT(nn.Module):
         self.projection_head1 = nn.Conv2d(192, 512, kernel_size=1)
         self.projection_head2 = nn.Conv2d(384, 512, kernel_size=1)
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -710,7 +715,7 @@ class Hyrachy_ConV_VisionModelViT(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -767,7 +772,7 @@ class Hyrachy_VisionModelViT_GazeEmb(nn.Module):
         self.projection_head2 = nn.Linear(384, 512, bias=False)
         # self.projection_head3 = nn.Linear(768, 512, bias=False)
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
@@ -778,7 +783,7 @@ class Hyrachy_VisionModelViT_GazeEmb(nn.Module):
     def load_from_medclip(self, checkpoint):
         '''handle key mismatch of medclip and the vision encoder.
         '''
-        state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         new_state_dict = {}
         for key in state_dict.keys():
             if 'vision_model' in key:
@@ -804,14 +809,14 @@ class Hyrachy_VisionModelViT_GazeEmb(nn.Module):
         if pixel_values.shape[1] == 1: pixel_values = pixel_values.repeat((1,3,1,1))
         # (70, 1, 224, 224) -> (70, 3136, 96)
         if gaze_heatmaps is not None:
-            hm_resize_func = transforms.Resize((56, 56), antialias=True).cuda()
+            hm_resize_func = transforms.Resize((56, 56), antialias=True).to('cpu')
             gaze_embeddings = []
             for gaze_item in gaze_heatmaps:
                 hm5656 = hm_resize_func(gaze_item)
                 hm5656 = (hm5656 - hm5656.min()) / (hm5656.max() - hm5656.min())
                 flatten_gaze_repeat = torch.flatten(hm5656[0]).unsqueeze(-1).repeat(1, 96)
                 gaze_embeddings.append(flatten_gaze_repeat.unsqueeze(0))
-            gaze_embeddings = torch.cat(gaze_embeddings, dim=0).cuda()
+            gaze_embeddings = torch.cat(gaze_embeddings, dim=0).to('cpu')
         else:
             gaze_embeddings = None
 
@@ -891,7 +896,7 @@ class ImageEncoder(nn.Module):
 
             self.feature_dim = vision_width
 
-            # checkpoint = torch.load(checkpoint_path)
+            # checkpoint = safe_load(checkpoint_path)
             # state_dict = checkpoint["model"]
             # msg = self.model.load_state_dict(state_dict, strict=False)
             # print('msg', msg)
@@ -1308,14 +1313,14 @@ class Hyrachy_Model(nn.Module):
         # )
         # self.ssim_func =
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -1360,14 +1365,14 @@ class Hyrachy_Model(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
         input_dir = '/data2/machong/LM_tools/MedCLIP-main/EGMA/pretrain_weights/medclip-vit-pretrained'
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -1390,10 +1395,10 @@ class Hyrachy_Model(nn.Module):
                 gaze_hm=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -1452,8 +1457,8 @@ class Hyrachy_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -1484,19 +1489,19 @@ class Hyrachy_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -1520,8 +1525,8 @@ class Hyrachy_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -1558,22 +1563,22 @@ class Hyrachy_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -1601,10 +1606,10 @@ class Hyrachy_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -1621,7 +1626,7 @@ class Hyrachy_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -1679,14 +1684,14 @@ class Hyrachy_FILIP_Model(nn.Module):
         # )
         # self.ssim_func =
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -1731,14 +1736,14 @@ class Hyrachy_FILIP_Model(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
         input_dir = '/data2/machong/LM_tools/MedCLIP-main/EGMA/pretrain_weights/medclip-vit-pretrained'
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -1762,10 +1767,10 @@ class Hyrachy_FILIP_Model(nn.Module):
                 img_sent_num=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -1817,20 +1822,20 @@ class Hyrachy_FILIP_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         batch_sent_mask = []
         for i in range(bs):
             paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_e = paired_sent_index_s + per_img_sent_num[i]
             batch_text_token_f[i, 0:per_img_sent_num[i], :] += sent_token_f[paired_sent_index_s:paired_sent_index_e, :]  # (5, 512) +=
 
-            # instance_sent_mask = torch.zeros([1, max_sent_num]).cuda()
+            # instance_sent_mask = torch.zeros([1, max_sent_num]).to('cpu')
             # instance_sent_mask[:, 0:per_img_sent_num[i]] = 1.0
             # batch_sent_mask.append(instance_sent_mask)
 
         bs, patch_token_num, dim1 = patch_token_f.shape  # bs 49 512
         # batch_text_token_f (bs, 5, 512)
-        # batch_sent_mask = torch.cat(batch_sent_mask, dim=0).cuda()
+        # batch_sent_mask = torch.cat(batch_sent_mask, dim=0).to('cpu')
         # batch_text_token_f = batch_text_token_f * batch_sent_mask
 
         patch_emb_q = torch.reshape(patch_token_f, (bs*patch_token_num, dim1))   # bsx49 512
@@ -1901,7 +1906,7 @@ class Hyrachy_FILIP_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -1921,18 +1926,18 @@ class Hyrachy_FILIP_Model(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -1952,8 +1957,8 @@ class Hyrachy_FILIP_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -1972,8 +1977,8 @@ class Hyrachy_FILIP_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -2004,19 +2009,19 @@ class Hyrachy_FILIP_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -2040,8 +2045,8 @@ class Hyrachy_FILIP_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -2078,22 +2083,22 @@ class Hyrachy_FILIP_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -2121,10 +2126,10 @@ class Hyrachy_FILIP_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -2141,7 +2146,7 @@ class Hyrachy_FILIP_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -2240,14 +2245,14 @@ class SPARC_MedCLIPModel(nn.Module):
         # )
         # self.ssim_func =
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -2292,14 +2297,14 @@ class SPARC_MedCLIPModel(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
         input_dir = '/data2/machong/LM_tools/MedCLIP-main/EGMA/pretrain_weights/medclip-vit-pretrained'
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None, img_sent_num=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds, batch_embeds = self.text_model(input_ids, attention_mask, img_sent_num)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         batch_embeds = batch_embeds / batch_embeds.norm(dim=-1, keepdim=True)
@@ -2324,10 +2329,10 @@ class SPARC_MedCLIPModel(nn.Module):
                 img_sent_num=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -2387,7 +2392,7 @@ class SPARC_MedCLIPModel(nn.Module):
         sent_num, f_num = sent_token_f.shape   # sent_num 512
         # max_sent_num = max(per_img_sent_num)
         #
-        # batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        # batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         # batch_sent_mask = []
         # for i in range(bs):
         #     paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
@@ -2399,7 +2404,7 @@ class SPARC_MedCLIPModel(nn.Module):
         # word_emb_q = torch.reshape(batch_text_token_f, (bs*max_sent_num, dim1)).transpose(1,0)  # bsx max_sent_num, 512
         sent_gaze_hm = None
         if gaze_hm is not None:
-            hm_resize_func = transforms.Resize((resize_img_hw, resize_img_hw), antialias=True).cuda()
+            hm_resize_func = transforms.Resize((resize_img_hw, resize_img_hw), antialias=True).to('cpu')
             resized_hm = hm_resize_func(gaze_hm)
             resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
 
@@ -2431,16 +2436,16 @@ class SPARC_MedCLIPModel(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         """gaze"""
         gaze_guided_loss = 0
         if gaze_hm is not None:
             sent_to_patch_gaze_multi_label = gaze_hm.clone()
             sent_to_patch_gaze_multi_label[gaze_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[gaze_hm==0] = 0.0  # (sent_num, 49)
-            gaze_T2I_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), T2I_sim_matrix)
-            gaze_I2T_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), I2T_sim_matrix)
+            gaze_T2I_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), T2I_sim_matrix)
+            gaze_I2T_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), I2T_sim_matrix)
             gaze_guided_loss = (gaze_T2I_loss.mean() + gaze_I2T_loss.mean()) / 2
 
         sent_num, patch_num = T2I_sim_matrix.shape
@@ -2498,20 +2503,20 @@ class SPARC_MedCLIPModel(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         batch_sent_mask = []
         for i in range(bs):
             paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_e = paired_sent_index_s + per_img_sent_num[i]
             batch_text_token_f[i, 0:per_img_sent_num[i], :] += sent_token_f[paired_sent_index_s:paired_sent_index_e, :]  # (5, 512) +=
 
-            # instance_sent_mask = torch.zeros([1, max_sent_num]).cuda()
+            # instance_sent_mask = torch.zeros([1, max_sent_num]).to('cpu')
             # instance_sent_mask[:, 0:per_img_sent_num[i]] = 1.0
             # batch_sent_mask.append(instance_sent_mask)
 
         bs, patch_token_num, dim1 = patch_token_f.shape  # bs 49 512
         # batch_text_token_f (bs, 5, 512)
-        # batch_sent_mask = torch.cat(batch_sent_mask, dim=0).cuda()
+        # batch_sent_mask = torch.cat(batch_sent_mask, dim=0).to('cpu')
         # batch_text_token_f = batch_text_token_f * batch_sent_mask
 
         patch_emb_q = torch.reshape(patch_token_f, (bs*patch_token_num, dim1))   # bsx49 512
@@ -2582,7 +2587,7 @@ class SPARC_MedCLIPModel(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -2602,18 +2607,18 @@ class SPARC_MedCLIPModel(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -2633,8 +2638,8 @@ class SPARC_MedCLIPModel(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -2653,8 +2658,8 @@ class SPARC_MedCLIPModel(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -2685,19 +2690,19 @@ class SPARC_MedCLIPModel(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -2721,8 +2726,8 @@ class SPARC_MedCLIPModel(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -2759,22 +2764,22 @@ class SPARC_MedCLIPModel(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -2802,10 +2807,10 @@ class SPARC_MedCLIPModel(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -2822,7 +2827,7 @@ class SPARC_MedCLIPModel(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -2879,14 +2884,14 @@ class SPARC_FILIP_Model(nn.Module):
         # )
         # self.ssim_func =
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -2931,14 +2936,14 @@ class SPARC_FILIP_Model(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
         input_dir = '/data2/machong/LM_tools/MedCLIP-main/EGMA/pretrain_weights/medclip-vit-pretrained'
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -2962,10 +2967,10 @@ class SPARC_FILIP_Model(nn.Module):
                 img_sent_num=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -3048,8 +3053,8 @@ class SPARC_FILIP_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -3106,7 +3111,7 @@ class SPARC_FILIP_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -3160,7 +3165,7 @@ class SPARC_FILIP_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -3181,18 +3186,18 @@ class SPARC_FILIP_Model(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -3212,8 +3217,8 @@ class SPARC_FILIP_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -3232,8 +3237,8 @@ class SPARC_FILIP_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -3264,19 +3269,19 @@ class SPARC_FILIP_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -3300,8 +3305,8 @@ class SPARC_FILIP_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -3338,22 +3343,22 @@ class SPARC_FILIP_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -3381,10 +3386,10 @@ class SPARC_FILIP_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -3401,7 +3406,7 @@ class SPARC_FILIP_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -3461,14 +3466,14 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         # )
         # self.ssim_func =
         if checkpoint is not None:
-            state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # self.load_state_dict(state_dict)
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             print('missing keys:', missing_keys)
             print('unexpected keys:', unexpected_keys)
             print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -3513,14 +3518,14 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         #     print('\n Download pretrained model from:', pretrained_url)
 
         input_dir = '/data2/machong/LM_tools/MedCLIP-main/EGMA/pretrain_weights/medclip-vit-pretrained'
-        state_dict = torch.load(os.path.join(input_dir, constants.WEIGHTS_NAME))
+        state_dict = safe_load(os.path.join(input_dir, constants.WEIGHTS_NAME))
         self.load_state_dict(state_dict)
         print('load model weight from:', input_dir)
 
     def encode_text(self, input_ids=None, attention_mask=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         text_embeds = self.text_model(input_ids, attention_mask)
         text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         return text_embeds
@@ -3545,10 +3550,10 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
                 img_with_gaze=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -3615,10 +3620,10 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
                     img_with_gaze=None,
                     **kwargs,
                     ):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
-        pixel_values = pixel_values.cuda()
+            attention_mask = attention_mask.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds = self.encode_image(pixel_values)
         embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds[0], img_embeds[1], img_embeds[2], img_embeds[-1]
@@ -3683,7 +3688,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -3713,7 +3718,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         word_sim_matrix = torch.reshape(word_sim_matrix, [bs, bs, max_sent_num]) # bs x (bs x word_token_num)
         word_sim_matrix = word_sim_matrix.sum(2) # bs x bs
         # word_sim_matrix /= sum(per_img_sent_num)
-        word_sim_matrix /= torch.Tensor(per_img_sent_num).cuda()
+        word_sim_matrix /= torch.Tensor(per_img_sent_num).to('cpu')
 
         return patch_sim_matrix, word_sim_matrix
 
@@ -3725,7 +3730,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -3767,7 +3772,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         word_sim_matrix = torch.reshape(word_sim_matrix, [bs, bs, max_sent_num]) # bs x (bs x word_token_num)
         word_sim_matrix = word_sim_matrix.sum(2) # bs x bs
         # word_sim_matrix /= sum(per_img_sent_num)
-        word_sim_matrix /= torch.Tensor(per_img_sent_num).cuda()
+        word_sim_matrix /= torch.Tensor(per_img_sent_num).to('cpu')
 
         I_to_T_loss = self.contrastive_loss(patch_sim_matrix)
         T_to_I_loss = self.contrastive_loss(word_sim_matrix)
@@ -3781,7 +3786,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
 
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -3803,12 +3808,12 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
                 text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
                 img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
                 img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-                img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+                img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
                 img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
                 gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
@@ -3816,7 +3821,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
                 # gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= sum(batch_gaze_condition)
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -3836,8 +3841,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -3871,8 +3876,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -3931,8 +3936,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -3985,8 +3990,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
         bs = patch_token_f.size(0)  # bs 49 512
         sent_num, f_num = sent_token_f.shape   # sent_num 512
 
-        hm_resize_func = transforms.Resize((resize_img_hw, resize_img_hw), antialias=True).cuda()
-        resized_hm = hm_resize_func(gaze_hm.cuda())
+        hm_resize_func = transforms.Resize((resize_img_hw, resize_img_hw), antialias=True).to('cpu')
+        resized_hm = hm_resize_func(gaze_hm.to('cpu'))
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
 
         fine_grianed_loss, gaze_loss = 0, 0
@@ -4016,7 +4021,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
 
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         # T2I_sim_matrix = gaze_hm
         # I2T_sim_matrix = gaze_hm.T
 
@@ -4078,7 +4083,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
 
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         # T2I_sim_matrix = gaze_hm
         # I2T_sim_matrix = gaze_hm.T
 
@@ -4146,7 +4151,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
 
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         # T2I_sim_matrix = gaze_hm
         # I2T_sim_matrix = gaze_hm.T
 
@@ -4215,7 +4220,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
 
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         # T2I_sim_matrix = gaze_hm
         # I2T_sim_matrix = gaze_hm.T
 
@@ -4286,7 +4291,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
 
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
         # T2I_sim_matrix = gaze_hm
         # I2T_sim_matrix = gaze_hm.T
 
@@ -4367,8 +4372,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -4399,19 +4404,19 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -4435,8 +4440,8 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -4473,22 +4478,22 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -4516,10 +4521,10 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -4536,7 +4541,7 @@ class SPARC_FILIP_PartGaze_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -4605,14 +4610,14 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         # )
         # self.ssim_func =
         # if checkpoint is not None:
-        #     state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+        #     state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
         #     # self.load_state_dict(state_dict)
         #     missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
         #     print('missing keys:', missing_keys)
         #     print('unexpected keys:', unexpected_keys)
         #     print('load model weight from:', checkpoint)
 
-            # state_dict = torch.load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
+            # state_dict = safe_load(os.path.join(checkpoint, constants.WEIGHTS_NAME))
             # new_state_dict = {}
             # for key in state_dict.keys():
             #     if 'vision_model' in key:
@@ -4630,17 +4635,17 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         import zipfile
         pretrained_url = None
 
-        checkpoint = torch.load(input_dir)
+        checkpoint = safe_load(input_dir)
         # msg = self.load_state_dict(checkpoint["state_dict"], strict=False)
         msg = self.load_state_dict(checkpoint, strict=False)
         print(msg)
 
     def encode_text(self, input_ids=None, attention_mask=None, token_type_ids=None):
-        input_ids = input_ids.cuda()
+        input_ids = input_ids.to('cpu')
         if attention_mask is not None:
-            attention_mask = attention_mask.cuda()
+            attention_mask = attention_mask.to('cpu')
         if token_type_ids is not None:
-            token_type_ids = token_type_ids.cuda()
+            token_type_ids = token_type_ids.to('cpu')
 
         report_feat_q, word_feat_q, word_attn_q, sents = self.text_encoder_q(input_ids, attention_mask, token_type_ids)
         word_emb_q = self.text_encoder_q.local_embed(word_feat_q)
@@ -4673,8 +4678,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
                 img_with_gaze=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
-        pixel_values = pixel_values.cuda()
+        input_ids = input_ids.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         img_embeds, img_patch_embeds = self.encode_image(pixel_values)
         # embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds, img_embeds, img_embeds, img_embeds
@@ -4744,8 +4749,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -4802,7 +4807,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -4858,7 +4863,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -4899,7 +4904,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         word_sim_matrix = torch.reshape(word_sim_matrix, [bs, bs, max_sent_num]) # bs x (bs x word_token_num)
         word_sim_matrix = word_sim_matrix.sum(2) # bs x bs
         # word_sim_matrix /= sum(per_img_sent_num)
-        word_sim_matrix /= torch.Tensor(per_img_sent_num).cuda()
+        word_sim_matrix /= torch.Tensor(per_img_sent_num).to('cpu')
 
         I_to_T_loss = self.contrastive_loss(patch_sim_matrix)
         T_to_I_loss = self.contrastive_loss(word_sim_matrix)
@@ -4914,7 +4919,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.8
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -4935,18 +4940,18 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -4966,8 +4971,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -4978,7 +4983,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -5000,12 +5005,12 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
                 text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
                 # img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
                 # img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
                 # img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
                 #
                 # gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
@@ -5013,7 +5018,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
                 gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= sum(batch_gaze_condition)
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -5033,8 +5038,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -5053,8 +5058,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -5085,19 +5090,19 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -5121,8 +5126,8 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -5159,22 +5164,22 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -5202,10 +5207,10 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -5222,7 +5227,7 @@ class SPARC_FILIP_PartGaze_ViTBase_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -5266,7 +5271,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
                  device=None,
                  ) -> None:
         super().__init__()
-        self.ckpt = torch.load(checkpoint, map_location=device)
+        self.ckpt = safe_load(checkpoint, map_location=device)
         self.cfg = self.ckpt["hyper_parameters"]
         # assert vision_cls in [MedCLIPVisionModel, MedCLIPVisionModelViT, Hyrachy_MedCLIPVisionModelViT], 'vision_cls should be one of [MedCLIPVisionModel, MedCLIPVisionModelViT]'
         self.text_encoder = build_text_model(self.cfg)
@@ -5279,7 +5284,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         self.from_pretrained()
 
     def from_pretrained(self, input_dir=None):
-        # ckpt = torch.load(input_dir)
+        # ckpt = safe_load(input_dir)
         # cfg = ckpt["hyper_parameters"]
         ckpt_dict = self.ckpt["state_dict"]
 
@@ -5316,10 +5321,10 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
                 img_with_gaze=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
-        attention_mask = attention_mask.cuda()
-        token_type_ids = token_type_ids.cuda()
-        pixel_values = pixel_values.cuda()
+        input_ids = input_ids.to('cpu')
+        attention_mask = attention_mask.to('cpu')
+        token_type_ids = token_type_ids.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         # img_embeds, img_patch_embeds = self.encode_image(pixel_values)
         # embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds, img_embeds, img_embeds, img_embeds
@@ -5397,8 +5402,8 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -5455,7 +5460,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -5511,7 +5516,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -5552,7 +5557,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         word_sim_matrix = torch.reshape(word_sim_matrix, [bs, bs, max_sent_num]) # bs x (bs x word_token_num)
         word_sim_matrix = word_sim_matrix.sum(2) # bs x bs
         # word_sim_matrix /= sum(per_img_sent_num)
-        word_sim_matrix /= torch.Tensor(per_img_sent_num).cuda()
+        word_sim_matrix /= torch.Tensor(per_img_sent_num).to('cpu')
 
         I_to_T_loss = self.contrastive_loss(patch_sim_matrix)
         T_to_I_loss = self.contrastive_loss(word_sim_matrix)
@@ -5567,7 +5572,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.8
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -5588,18 +5593,18 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -5619,8 +5624,8 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -5631,7 +5636,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -5653,12 +5658,12 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
                 text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
                 # img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
                 # img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
                 # img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
                 #
                 # gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
@@ -5666,7 +5671,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
                 gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= sum(batch_gaze_condition)
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -5686,8 +5691,8 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -5706,8 +5711,8 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -5738,19 +5743,19 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -5774,8 +5779,8 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -5812,22 +5817,22 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -5855,10 +5860,10 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -5875,7 +5880,7 @@ class SPARC_FILIP_PartGaze_GLoRIA_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -6085,7 +6090,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         self.from_pretrained(checkpoint, device)
 
     def from_pretrained(self, input_dir=None, device=None):
-        checkpoint = torch.load(input_dir, map_location=device)
+        checkpoint = safe_load(input_dir, map_location=device)
         if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
             state_dict = checkpoint['state_dict']
         else:
@@ -6135,10 +6140,10 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
                 img_with_gaze=None,
                 **kwargs,
                 ):
-        input_ids = input_ids.cuda()
-        # attention_mask = attention_mask.cuda()
-        # token_type_ids = token_type_ids.cuda()
-        pixel_values = pixel_values.cuda()
+        input_ids = input_ids.to('cpu')
+        # attention_mask = attention_mask.to('cpu')
+        # token_type_ids = token_type_ids.to('cpu')
+        pixel_values = pixel_values.to('cpu')
 
         # img_embeds, img_patch_embeds = self.encode_image(pixel_values)
         # embeds_1024, embeds_256, embeds_49, last_embeds = img_embeds, img_embeds, img_embeds, img_embeds
@@ -6215,8 +6220,8 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         # I2T_sim_matrix = (patch_emb_q @ word_emb_q.T) * logit_scale  # 49, sent_num
         I2T_sim_matrix = self.compute_logits(patch_emb_q, word_emb_q)
         T2I_sim_matrix = I2T_sim_matrix.T   # sent_num, 49,
-        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).cuda()
-        mse_loss = nn.MSELoss(size_average = False).cuda()
+        cos_loss = nn.CosineSimilarity(dim=0, eps=1e-6).to('cpu')
+        mse_loss = nn.MSELoss(size_average = False).to('cpu')
 
         sent_num, patch_num = T2I_sim_matrix.shape
         """Text fine-grained"""
@@ -6273,7 +6278,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -6329,7 +6334,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         sent_num, f_num = sent_token_f.shape
         max_sent_num = max(per_img_sent_num)
 
-        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).cuda()
+        batch_text_token_f = torch.zeros([bs, max_sent_num, f_num]).to('cpu')
         for i in range(bs):
             # paired_sent_index_s = per_img_sent_num[i-1] if i != 0 else 0
             paired_sent_index_s = sum(per_img_sent_num[0:i]) if i != 0 else 0
@@ -6370,7 +6375,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         word_sim_matrix = torch.reshape(word_sim_matrix, [bs, bs, max_sent_num]) # bs x (bs x word_token_num)
         word_sim_matrix = word_sim_matrix.sum(2) # bs x bs
         # word_sim_matrix /= sum(per_img_sent_num)
-        word_sim_matrix /= torch.Tensor(per_img_sent_num).cuda()
+        word_sim_matrix /= torch.Tensor(per_img_sent_num).to('cpu')
 
         I_to_T_loss = self.contrastive_loss(patch_sim_matrix)
         T_to_I_loss = self.contrastive_loss(word_sim_matrix)
@@ -6385,7 +6390,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.8
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -6406,18 +6411,18 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
             sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
             text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
             img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
             img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+            img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
             img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
 
             gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
         gaze_guided_loss /= bs
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -6437,8 +6442,8 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -6449,7 +6454,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         gaze_hm (sent_num, 1, 224, 224), resize_hw=7, per_img_sent_num=[], patch_token_num=49, sent_token_num=sen_num
         """
         alpha = 0.5
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         resized_hm = hm_resize_func(gaze_hm)
         resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         max_sent_num = max(per_img_sent_num)
@@ -6471,12 +6476,12 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
                 sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
 
-                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), single_text_to_patches_input)
+                text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), single_text_to_patches_input)
                 text_to_img_mlec_loss = text_to_img_mlec_loss.mean()
 
                 # img_patches_to_sent = batch_img_to_text_logits[i, :, i, :]  # (49, max_sent_num)
                 # img_patches_to_sent_input = img_patches_to_sent[:, 0:per_img_sent_num[i]]   # (49, num)
-                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), img_patches_to_sent_input)
+                # img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), img_patches_to_sent_input)
                 # img_to_text_mlec_loss = img_to_text_mlec_loss.mean()
                 #
                 # gaze_guided_loss += (text_to_img_mlec_loss*alpha + img_to_text_mlec_loss*(1-alpha))
@@ -6484,7 +6489,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
                 gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= sum(batch_gaze_condition)
 
-        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        # hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
         # resized_hm = hm_resize_func(gaze_hm)
         # resized_hm_flatten = resized_hm.view(resized_hm.size(0), -1)  # (sen_num ,49)
         #
@@ -6504,8 +6509,8 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm>0] = 1.0
         #     sent_to_patch_gaze_multi_label[sent_to_patch_paired_hm==0] = 0.0
         #
-        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.cuda(), all_sents_to_paired_img_patches)
-        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.cuda(), single_img_to_paired_sents_sim)
+        #     text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.to('cpu'), all_sents_to_paired_img_patches)
+        #     img_to_text_mlec_loss = self.multilabel_categorical_crossentropy(sent_to_patch_gaze_multi_label.T.to('cpu'), single_img_to_paired_sents_sim)
         #     gaze_guided_loss += (text_to_img_mlec_loss*0.5 + img_to_text_mlec_loss*0.5)
         # gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -6524,8 +6529,8 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
     def gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -6556,19 +6561,19 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
             if self.train_config['gaze_loss_norm'] == "L2_norm":
                 gaze_hm = gaze_hm / gaze_hm.norm(dim=-1, keepdim=True)
                 single_text_to_img_logits = single_text_to_img_logits / single_text_to_img_logits.norm(dim=-1, keepdim=True)
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(single_text_to_img_logits.unsqueeze(0))
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)
         # batch_text_to_img_logits = batch_text_to_img_logits / batch_text_to_img_logits.norm(dim=-1, keepdim=True) # (bs, 1024)
@@ -6592,8 +6597,8 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
     def two_sides_gaze_guided_clip_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
-        kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
+        kl_loss = nn.KLDivLoss(reduction='batchmean').to('cpu')
 
         # c = len(img_embeds[1])
         # if c == 1024:
@@ -6630,22 +6635,22 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
                 logit_per_text_to_img_patches = logit_per_text_to_img_patches / logit_per_text_to_img_patches.norm(dim=-1, keepdim=True)
                 logit_per_patches_to_text = logit_per_patches_to_text / logit_per_patches_to_text.norm(dim=0, keepdim=True)
 
-            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).cuda(), single_text_to_img_logits.view(resize_hw, resize_hw))
+            # mse_total_loss += self.mse_loss_func(gaze_hm.view(resize_hw, resize_hw).to('cpu'), single_text_to_img_logits.view(resize_hw, resize_hw))
             batch_text_to_img_logits.append(logit_per_text_to_img_patches.unsqueeze(0))  # (1, 1, 784)
             batch_img_to_text_logits.append(logit_per_patches_to_text.unsqueeze(0))  # (1, 784, 1)
 
             # # gaze_hm
             # top_k = int(torch.sum(gaze_hm>0)*0.8)
             # top_k_index = gaze_hm.topk(k=top_k)[1]
-            # zero = torch.zeros((1024)).cuda()
+            # zero = torch.zeros((1024)).to('cpu')
             # delta = 0.05
             # zero += delta
             # zero[top_k_index] += (1-2*delta)
             hm_soft_masks.append(gaze_hm.unsqueeze(0))  # (1, 49)
             hm_soft_masks_T.append(gaze_hm.unsqueeze(0))  # (1, 49)
 
-        hm_soft_masks = torch.cat(hm_soft_masks, 0).cuda()  # (bs, 49)
-        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).cuda()  # (bs, 49)
+        hm_soft_masks = torch.cat(hm_soft_masks, 0).to('cpu')  # (bs, 49)
+        hm_soft_masks_T = torch.cat(hm_soft_masks_T, 0).to('cpu')  # (bs, 49)
 
         batch_text_to_img_logits = torch.cat(batch_text_to_img_logits, 0)  # (BS, 49, 1)
         batch_img_to_text_logits = torch.cat(batch_img_to_text_logits, 0)  # (bs, 1, 49)
@@ -6673,10 +6678,10 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
     def gaze_guided_Multilabel_CrossE_loss(self, img_embeds, gaze_hms, text_embeds, resize_hw):
         # img_embeds (bs, 1024, 512)  gaze_hms(bs, 1, 256, 256) text_embeds(bs, 512)
         bs = len(img_embeds)
-        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).cuda()
+        hm_resize_func = transforms.Resize((resize_hw, resize_hw), antialias=True).to('cpu')
 
         resized_hm = hm_resize_func(gaze_hms)
-        resized_hm_flatten = resized_hm.view(bs, -1).cuda()  # (bs ,1024)
+        resized_hm_flatten = resized_hm.view(bs, -1).to('cpu')  # (bs ,1024)
         # resized_hm_flatten = resized_hm_flatten / resized_hm_flatten.norm(dim=-1, keepdim=True) # (bs, 1024)
 
         repeat_text_embeds = text_embeds.unsqueeze(1)
@@ -6693,7 +6698,7 @@ class SPARC_FILIP_PartGaze_OpenCLIP_Model(nn.Module):
             gaze_multi_label[gaze_hm>0] = 1.0
             gaze_multi_label[gaze_hm==0] = 0.0
 
-            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.cuda(), logit_per_text_to_img_patches)
+            text_to_img_mlec_loss = self.multilabel_categorical_crossentropy(gaze_multi_label.to('cpu'), logit_per_text_to_img_patches)
             gaze_guided_loss += text_to_img_mlec_loss
         gaze_guided_loss /= bs
         return gaze_guided_loss
@@ -6731,12 +6736,12 @@ class Retrival_Test_Model(nn.Module):
         '''take image pixel values (after transform) and prompt_inputs
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            for k in cls_text.keys(): inputs[k] = cls_text[k].cuda()
+            for k in cls_text.keys(): inputs[k] = cls_text[k].to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -6771,12 +6776,12 @@ class Prompt_Retrival(nn.Module):
         '''take image pixel values (after transform) and prompt_inputs
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            for k in cls_text.keys(): inputs[k] = cls_text[k].cuda()
+            for k in cls_text.keys(): inputs[k] = cls_text[k].to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -6832,7 +6837,7 @@ class my_SuperviseClassifier_chexpert(nn.Module):
                 **kwargs,
                 ):
         outputs = defaultdict()
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         # take embeddings before the projection head
         img_embeds = self.model(pixel_values, project=False)
 
@@ -6840,7 +6845,7 @@ class my_SuperviseClassifier_chexpert(nn.Module):
         outputs['embedding'] = img_embeds
         outputs['logits'] = logits
         if labels is not None and return_loss:
-            labels = labels.cuda().float()
+            labels = labels.to('cpu').float()
             if len(labels.shape) == 1: labels = labels.view(-1,1)
             if self.mode == 'multiclass': labels = labels.flatten().long()
             loss = self.loss_fn(logits, labels)
@@ -6885,7 +6890,7 @@ class my_SuperviseClassifier_mgca(nn.Module):
                 **kwargs,
                 ):
         outputs = defaultdict()
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         # take embeddings before the projection head
         img_embeds, _ = self.model(pixel_values)
         # img_feat_q, patch_feat_q
@@ -6896,7 +6901,7 @@ class my_SuperviseClassifier_mgca(nn.Module):
         outputs['embedding'] = img_embeds
         outputs['logits'] = logits
         if labels is not None and return_loss:
-            labels = labels.cuda().float()
+            labels = labels.to('cpu').float()
             if len(labels.shape) == 1: labels = labels.view(-1,1)
             if self.mode == 'multiclass': labels = labels.flatten().long()
             loss = self.loss_fn(logits, labels)
@@ -6942,14 +6947,14 @@ class SuperviseClassifier(nn.Module):
         **kwargs,
         ):
         outputs = defaultdict()
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         # take embeddings before the projection head
         img_embeds = self.model(pixel_values, project=False)
         logits = self.fc(img_embeds)
         outputs['embedding'] = img_embeds
         outputs['logits'] = logits
         if labels is not None and return_loss:
-            labels = labels.cuda().float()
+            labels = labels.to('cpu').float()
             if len(labels.shape) == 1: labels = labels.view(-1,1)
             if self.mode == 'multiclass': labels = labels.flatten().long()
             loss = self.loss_fn(logits, labels)
@@ -7024,12 +7029,12 @@ class PromptTuningClassifier(nn.Module):
         '''take image pixel values (after transform) and prompt_inputs
         (a dict of {'class1':{'input_ids':...,'attention_mask':,...}), 'class2':...}
         '''
-        pixel_values = pixel_values.cuda()
+        pixel_values = pixel_values.to('cpu')
         class_similarities = []
         class_names = []
         for cls_name, cls_text in prompt_inputs.items():
             inputs = {'pixel_values':pixel_values}
-            for k in cls_text.keys(): inputs[k] = cls_text[k].cuda()
+            for k in cls_text.keys(): inputs[k] = cls_text[k].to('cpu')
 
             # TODO:
             # take soft mask over class_prompts to reach the similarities to classes
@@ -7052,7 +7057,7 @@ class PromptTuningClassifier(nn.Module):
         }
 
         if labels is not None and return_loss:
-            labels = labels.cuda().float()
+            labels = labels.to('cpu').float()
             if len(labels.shape) == 1: labels = labels.view(-1,1)
             if self.mode in ['multiclass', 'binary']: labels = labels.flatten().long()
             loss = self.loss_fn(class_similarities, labels)

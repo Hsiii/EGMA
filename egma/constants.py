@@ -6,8 +6,8 @@ BERT_TYPE = 'emilyalsentzer/Bio_ClinicalBERT'
 VIT_TYPE = 'microsoft/swin-tiny-patch4-window7-224'
 
 
-# IMG_SIZE = 224
-IMG_SIZE = 256
+IMG_SIZE = 224
+# IMG_SIZE = 256
 IMG_MEAN = .5862785803043838
 IMG_STD = .27950088968644304
 

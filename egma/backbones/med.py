@@ -29,10 +29,18 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import (
     PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
 )
+
+def apply_chunking_to_forward(forward_fn, chunk_size, chunk_dim, *input_tensors):
+    # Polyfill: ignore chunking for now and just execute
+    return forward_fn(*input_tensors)
+
+def find_pruneable_heads_and_indices(*args, **kwargs):
+    return set(), None
+
+def prune_linear_layer(layer, index, dim=0):
+    return layer
+
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
 
