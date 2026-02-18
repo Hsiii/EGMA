@@ -29,6 +29,10 @@ from . import constants
 
 from.open_clip.tokenizer import tokenize
 
+LOCAL_DATA_DIR = osp.join(osp.dirname(osp.dirname(__file__)), 'local_data')
+SENTENCE_LABEL_PATH = osp.join(LOCAL_DATA_DIR, 'sentence-label.csv')
+SENTENCE_LABEL2_PATH = osp.join(LOCAL_DATA_DIR, 'sentence-label2.csv')
+
 class MedCLIPFeatureExtractor(CLIPFeatureExtractor):
     def __init__(self, 
         do_resize=True, 
@@ -186,8 +190,8 @@ class ImageTextContrastiveDataset(Dataset):
             self.transform = imgtransform
 
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -350,8 +354,8 @@ class my_ImageTextContrastiveDataset(Dataset):
             self.transform = imgtransform
 
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -518,8 +522,8 @@ class my_Hyrachy_ImageTextContrastiveDataset(Dataset):
             # transforms.Resize((constants.IMG_SIZE, constants.IMG_SIZE))],
         )
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -693,8 +697,8 @@ class my_Hyrachy_MIMICEYE_ImageTextContrastiveDataset(Dataset):
             # transforms.Resize((constants.IMG_SIZE, constants.IMG_SIZE))],
         )
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -872,8 +876,8 @@ class my_Hyrachy_MIMICEYE_ImageTextContrastiveDataset_wholeText(Dataset):
             # transforms.Resize((constants.IMG_SIZE, constants.IMG_SIZE))],
         )
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -1051,8 +1055,8 @@ class my_Hyrachy_MIMICEYE_ImageTextContrastiveDataset_RandomSentenceHeatmap(Data
 
         self.hm_transform = hm_transform
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -1261,8 +1265,8 @@ class my_Hyrachy_MIMICEYE_ImageTextContrastiveDataset_AllSentenceHeatmap(Dataset
 
         self.hm_transform = hm_transform
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -1459,8 +1463,8 @@ class my_Hyrachy_1083AUG_ImageTextContrastiveDataset_RandomSentenceHeatmap(Datas
 
         self.hm_transform = hm_transform
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('..../EGMA/local_data/sentence-label2.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL2_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL2_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -1685,8 +1689,8 @@ class my_Hyrachy_1083AUG_ImageTextContrastiveDataset_AllSentenceHeatmap(Dataset)
 
         self.hm_transform = hm_transform
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('..../EGMA/local_data/sentence-label2.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL2_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL2_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
@@ -2033,8 +2037,8 @@ class my_PartGaze_MIMICEYE_ImageTextContrastiveDataset_AllSentenceHeatmap(Datase
 
         self.hm_transform = hm_transform
         # use labeled sentences as prompts for chexpert training
-        self.sentence_label = pd.read_csv('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv', index_col=0).fillna(0)
-        print('/Users/hsi/Documents/Code/Project/EGMA/local_data/sentence-label.csv')
+        self.sentence_label = pd.read_csv(SENTENCE_LABEL_PATH, index_col=0).fillna(0)
+        print(f'load sentence prompts from {SENTENCE_LABEL_PATH}')
         self._preprocess_sentence_label()
         self._build_prompt_sentence()
 
