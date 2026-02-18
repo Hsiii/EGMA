@@ -17,10 +17,24 @@ from .backbones.med import BertModel
 
 from . import constants
 from transformers import AutoTokenizer, BertConfig, BertTokenizer, logging
-import torch # Ensure torch is imported
+
+
+RUNTIME_DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+if not torch.cuda.is_available():
+    def _tensor_cuda(self, device=None, non_blocking=False, memory_format=torch.preserve_format):
+        return self.to(RUNTIME_DEVICE)
+
+    def _module_cuda(self, device=None):
+        return self.to(RUNTIME_DEVICE)
+
+    torch.Tensor.cuda = _tensor_cuda
+    torch.nn.Module.cuda = _module_cuda
+
+
 def safe_load(*args, **kwargs):
     if not torch.cuda.is_available():
-        kwargs['map_location'] = torch.device('cpu')
+        kwargs['map_location'] = RUNTIME_DEVICE
     return torch.load(*args, **kwargs)
 
 from egma.gloria_models import *
