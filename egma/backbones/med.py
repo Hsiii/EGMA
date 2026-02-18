@@ -13,9 +13,7 @@ from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
 
 from transformers.activations import ACT2FN
-from transformers.file_utils import (
-    ModelOutput,
-)
+from transformers.utils.generic import ModelOutput
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithPoolingAndCrossAttentions,
@@ -30,16 +28,11 @@ from transformers.modeling_outputs import (
 from transformers.modeling_utils import (
     PreTrainedModel,
 )
-
-def apply_chunking_to_forward(forward_fn, chunk_size, chunk_dim, *input_tensors):
-    # Polyfill: ignore chunking for now and just execute
-    return forward_fn(*input_tensors)
-
-def find_pruneable_heads_and_indices(*args, **kwargs):
-    return set(), None
-
-def prune_linear_layer(layer, index, dim=0):
-    return layer
+from transformers.pytorch_utils import (
+    apply_chunking_to_forward,
+    find_pruneable_heads_and_indices,
+    prune_linear_layer,
+)
 
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
