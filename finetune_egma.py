@@ -63,7 +63,7 @@ train_config = {
     'finetuned': False,  #  False  True
     'use_eda': False,  #  False  True
     'init_weight_path': r"..../EGMA/pretrain_weights/medclip-vit-pretrained/",
-    'info': ",  # two_sides_gaze_guided_clip_loss0.5  random sentence with sent_heatmap,
+    'info': "",  # two_sides_gaze_guided_clip_loss0.5  random sentence with sent_heatmap,
     'no_decay': [],   #  'bias', 'LayerNorm.bias', 'LayerNorm.weight'
 }
 
@@ -134,7 +134,7 @@ elif train_config['model'] == 'Hyrachy_ConV_VisionModelViT':
 elif train_config['model'] == 'Hyrachy_FILIP_VisionModelViT':
     model = Hyrachy_FILIP_Model(vision_cls=Hyrachy_VisionModelViT, checkpoint=checkpoint, config=train_config)
 elif train_config['model'] == 'SPARC_VisionModelViT':
-    model = SPARC_Model(vision_cls=Hyrachy_VisionModelViT, checkpoint=checkpoint, config=train_config)
+    model = SPARC_MedCLIPModel(vision_cls=Hyrachy_VisionModelViT, checkpoint=checkpoint, config=train_config)
 elif train_config['model'] == 'FILIP_and_SPARC_VisionModelViT':
     model = SPARC_FILIP_Model(vision_cls=Hyrachy_VisionModelViT, checkpoint=checkpoint, config=train_config)
 elif train_config['model'] == 'FILIP_SPARC_PartGaze_VisionModelViT':
